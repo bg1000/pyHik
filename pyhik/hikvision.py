@@ -39,7 +39,7 @@ from pyhik.constants import (
     __version__)
 
 
-_LOGGING = logging.getLogger(__name__)
+
 
 
 # Hide nuisance requests logging
@@ -70,10 +70,18 @@ class HikCamera(object):
     """Creates a new Hikvision api device."""
 
     def __init__(self, host=None, port=DEFAULT_PORT,
-                 usr=None, pwd=None):
+                 usr=None, pwd=None, **kwargs):
         """Initialize device."""
+#
+# If the caller passes in a logger then use it.
+# Otherwise use the default
+#
+        if "logger" in kwargs:
+            self.logger = kwargs["logger"]
+        else:
+            self.logger = logging.getLogger(__name__)
 
-        _LOGGING.debug("pyHik %s initializing new hikvision device at: %s",
+        self.logger.debug("pyHik %s initializing new hikvision device at: %s",
                        __version__, host)
 
         self.event_states = {}
@@ -84,7 +92,7 @@ class HikCamera(object):
         self.temp_namespace = None
 
         if not host:
-            _LOGGING.error('Host not specified! Cannot continue.')
+            self.logger.error('Host not specified! Cannot continue.')
             return
 
         self.host = host
@@ -151,18 +159,18 @@ class HikCamera(object):
             response = self.hik_request.get(url, timeout=CONNECT_TIMEOUT)
         except (requests.exceptions.RequestException,
                 requests.exceptions.ConnectionError) as err:
-            _LOGGING.error('Unable to fetch MotionDetection, error: %s', err)
+            self.logger.error('Unable to fetch MotionDetection, error: %s', err)
             self.motion_detection = None
             return self.motion_detection
 
         if response.status_code == requests.codes.unauthorized:
-            _LOGGING.error('Authentication failed')
+            self.logger.error('Authentication failed')
             self.motion_detection = None
             return self.motion_detection
 
         if response.status_code != requests.codes.ok:
             # If we didn't receive 200, abort
-            _LOGGING.debug('Unable to fetch motion detection.')
+            self.logger.debug('Unable to fetch motion detection.')
             self.motion_detection = None
             return self.motion_detection
 
@@ -177,8 +185,8 @@ class HikCamera(object):
             return self.motion_detection
 
         except AttributeError as err:
-            _LOGGING.error('Entire response: %s', response.text)
-            _LOGGING.error('There was a problem: %s', err)
+            self.logger.error('Entire response: %s', response.text)
+            self.logger.error('There was a problem: %s', err)
             self.motion_detection = None
             return self.motion_detection
 
@@ -197,8 +205,8 @@ class HikCamera(object):
 
         enabled = self._motion_detection_xml.find(self.element_query('enabled'))
         if enabled is None:
-            _LOGGING.error("Couldn't find 'enabled' in the xml")
-            _LOGGING.error('XML: %s', ET.tostring(self._motion_detection_xml))
+            self.logger.error("Couldn't find 'enabled' in the xml")
+            self.logger.error('XML: %s', ET.tostring(self._motion_detection_xml))
             return
 
         enabled.text = 'true' if enable else 'false'
@@ -208,29 +216,29 @@ class HikCamera(object):
             response = self.hik_request.put(url, data=xml, timeout=CONNECT_TIMEOUT)
         except (requests.exceptions.RequestException,
                 requests.exceptions.ConnectionError) as err:
-            _LOGGING.error('Unable to set MotionDetection, error: %s', err)
+            self.logger.error('Unable to set MotionDetection, error: %s', err)
             return
 
         if response.status_code == requests.codes.unauthorized:
-            _LOGGING.error('Authentication failed')
+            self.logger.error('Authentication failed')
             return
 
         if response.status_code != requests.codes.ok:
             # If we didn't receive 200, abort
-            _LOGGING.error('Unable to set motion detection: %s', response.text)
+            self.logger.error('Unable to set motion detection: %s', response.text)
 
         self.motion_detection = enable
 
     def add_update_callback(self, callback, sensor):
         """Register as callback for when a matching device sensor changes."""
         self._updateCallbacks.append([callback, sensor])
-        _LOGGING.debug('Added update callback to %s on %s', callback, sensor)
+        self.logger.debug('Added update callback to %s on %s', callback, sensor)
 
     def _do_update_callback(self, msg):
         """Call registered callback functions."""
         for callback, sensor in self._updateCallbacks:
             if sensor == msg:
-                _LOGGING.debug('Update callback %s for sensor %s',
+                self.logger.debug('Update callback %s for sensor %s',
                                callback, sensor)
                 callback(msg)
 
@@ -268,12 +276,12 @@ class HikCamera(object):
                     except KeyError:
                         # Sensor type doesn't have a known friendly name
                         # We can't reliably handle it at this time...
-                        _LOGGING.warning(
+                        self.logger.warning(
                             'Sensor type "%s" is unsupported.', event)
 
-            _LOGGING.debug('Initialized Dictionary: %s', self.event_states)
+            self.logger.debug('Initialized Dictionary: %s', self.event_states)
         else:
-            _LOGGING.debug('No Events available in dictionary.')
+            self.logger.debug('No Events available in dictionary.')
 
         self.get_motion_detection()
 
@@ -293,13 +301,13 @@ class HikCamera(object):
             response = self.hik_request.get(url, timeout=CONNECT_TIMEOUT)
             if response.status_code == requests.codes.not_found:
                 # Try alternate URL for triggers
-                _LOGGING.debug('Using alternate triggers URL.')
+                self.logger.debug('Using alternate triggers URL.')
                 url = '%s/Event/triggers' % self.root_url
                 response = self.hik_request.get(url)
 
         except (requests.exceptions.RequestException,
                 requests.exceptions.ConnectionError) as err:
-            _LOGGING.error('Unable to fetch events, error: %s', err)
+            self.logger.error('Unable to fetch events, error: %s', err)
             return None
 
         if response.status_code != 200:
@@ -316,7 +324,7 @@ class HikCamera(object):
             if nmsp.find('mmmm') != -1:
                 self.temp_namespace = self.namespace
                 self.namespace = nmsp
-                _LOGGING.debug('Changing Namespace: %s', self.namespace)
+                self.logger.debug('Changing Namespace: %s', self.namespace)
 
             if content[0].find(self.element_query('EventTrigger')):
                 event_xml = content[0].findall(
@@ -365,7 +373,7 @@ class HikCamera(object):
                                 .append(etchannel_num)
 
         except (AttributeError, ET.ParseError) as err:
-            _LOGGING.error(
+            self.logger.error(
                 'There was a problem finding an element: %s', err)
             return None
 
@@ -373,16 +381,16 @@ class HikCamera(object):
             self.device_type = NVR_DEVICE
         else:
             self.device_type = CAM_DEVICE
-        _LOGGING.debug('Processed %s as %s Device.',
+        self.logger.debug('Processed %s as %s Device.',
                        self.cam_id, self.device_type)
 
-        _LOGGING.debug('Found events: %s', events)
+        self.logger.debug('Found events: %s', events)
         self.hik_request.close()
 
         # Change back namespace if needed
         if self.temp_namespace is not None:
             self.namespace = self.temp_namespace
-            _LOGGING.debug('Changing Namespace: %s', self.namespace)
+            self.logger.debug('Changing Namespace: %s', self.namespace)
 
         return events
 
@@ -395,36 +403,36 @@ class HikCamera(object):
         try:
             response = self.hik_request.get(url, timeout=CONNECT_TIMEOUT)
             if response.status_code == requests.codes.unauthorized:
-                _LOGGING.debug('Basic authentication failed. Using digest.')
+                self.logger.debug('Basic authentication failed. Using digest.')
                 self.hik_request.auth = HTTPDigestAuth(self.usr, self.pwd)
                 using_digest = True
                 response = self.hik_request.get(url)
 
             if response.status_code == requests.codes.not_found:
                 # Try alternate URL for deviceInfo
-                _LOGGING.debug('Using alternate deviceInfo URL.')
+                self.logger.debug('Using alternate deviceInfo URL.')
                 url = '%s/System/deviceInfo' % self.root_url
                 response = self.hik_request.get(url)
                 # Seems to be difference between camera and nvr, they can't seem to
                 # agree if they should 404 or 401 first
                 if not using_digest and response.status_code == requests.codes.unauthorized:
-                    _LOGGING.debug('Basic authentication failed. Using digest.')
+                    self.logger.debug('Basic authentication failed. Using digest.')
                     self.hik_request.auth = HTTPDigestAuth(self.usr, self.pwd)
                     using_digest = True
                     response = self.hik_request.get(url)
 
         except (requests.exceptions.RequestException,
                 requests.exceptions.ConnectionError) as err:
-            _LOGGING.error('Unable to fetch deviceInfo, error: %s', err)
+            self.logger.error('Unable to fetch deviceInfo, error: %s', err)
             return None
 
         if response.status_code == requests.codes.unauthorized:
-            _LOGGING.error('Authentication failed')
+            self.logger.error('Authentication failed')
             return None
 
         if response.status_code != requests.codes.ok:
             # If we didn't receive 200, abort
-            _LOGGING.debug('Unable to fetch device info.')
+            self.logger.debug('Unable to fetch device info.')
             return None
 
         try:
@@ -432,7 +440,7 @@ class HikCamera(object):
             # Try to fetch namespace from XML
             nmsp = tree.tag.split('}')[0].strip('{')
             self.namespace = nmsp if nmsp.startswith('http') else XML_NAMESPACE
-            _LOGGING.debug('Using Namespace: %s', self.namespace)
+            self.logger.debug('Using Namespace: %s', self.namespace)
 
             for item in tree:
                 tag = item.tag.split('}')[1]
@@ -441,22 +449,22 @@ class HikCamera(object):
             return device_info
 
         except AttributeError as err:
-            _LOGGING.error('Entire response: %s', response.text)
-            _LOGGING.error('There was a problem: %s', err)
+            self.logger.error('Entire response: %s', response.text)
+            self.logger.error('There was a problem: %s', err)
             return None
 
     def watchdog_handler(self):
         """Take care of threads if wachdog expires."""
-        _LOGGING.debug('%s Watchdog expired. Resetting connection.', self.name)
+        self.logger.debug('%s Watchdog expired. Resetting connection.', self.name)
         self.watchdog.stop()
         self.reset_thrd.set()
 
     def disconnect(self):
         """Disconnect from event stream."""
-        _LOGGING.debug('Disconnecting from stream: %s', self.name)
+        self.logger.debug('Disconnecting from stream: %s', self.name)
         self.kill_thrd.set()
         self.thrd.join()
-        _LOGGING.debug('Event stream thread for %s is stopped', self.name)
+        self.logger.debug('Event stream thread for %s is stopped', self.name)
         self.kill_thrd.clear()
 
     def start_stream(self):
@@ -466,7 +474,7 @@ class HikCamera(object):
 
     def alert_stream(self, reset_event, kill_event):
         """Open event stream."""
-        _LOGGING.debug('Stream Thread Started: %s, %s', self.name, self.cam_id)
+        self.logger.debug('Stream Thread Started: %s, %s', self.name, self.cam_id)
         start_event = False
         parse_string = ""
         fail_count = 0
@@ -488,12 +496,12 @@ class HikCamera(object):
                 if stream.status_code != requests.codes.ok:
                     raise ValueError('Connection unsucessful.')
                 else:
-                    _LOGGING.debug('%s Connection Successful.', self.name)
+                    self.logger.debug('%s Connection Successful.', self.name)
                     fail_count = 0
                     self.watchdog.start()
 
                 for line in stream.iter_lines():
-                    # _LOGGING.debug('Processing line from %s', self.name)
+                    # self.logger.debug('Processing line from %s', self.name)
                     # filter out keep-alive new lines
                     if line:
                         str_line = line.decode("utf-8", "ignore")
@@ -512,7 +520,7 @@ class HikCamera(object):
                                     self.process_stream(tree)
                                     self.update_stale()
                                 except ET.ParseError as err:
-                                    _LOGGING.warning('XML parse error in stream.')
+                                    self.logger.warning('XML parse error in stream.')
                                 parse_string = ""
                         else:
                             if start_event:
@@ -527,7 +535,7 @@ class HikCamera(object):
 
                 if kill_event.is_set():
                     # We were asked to stop the thread so lets do so.
-                    _LOGGING.debug('Stopping event stream thread for %s',
+                    self.logger.debug('Stopping event stream thread for %s',
                                    self.name)
                     self.watchdog.stop()
                     self.hik_request.close()
@@ -541,7 +549,7 @@ class HikCamera(object):
                     requests.exceptions.ChunkedEncodingError) as err:
                 fail_count += 1
                 reset_event.clear()
-                _LOGGING.warning('%s Connection Failed (count=%d). Waiting %ss. Err: %s',
+                self.logger.warning('%s Connection Failed (count=%d). Waiting %ss. Err: %s',
                                  self.name, fail_count, (fail_count * 5) + 5, err)
                 parse_string = ""
                 self.watchdog.stop()
@@ -573,7 +581,7 @@ class HikCamera(object):
             ecount = tree.find(
                 self.element_query('activePostCount')).text
         except (AttributeError, KeyError, IndexError) as err:
-            _LOGGING.error('Problem finding attribute: %s', err)
+            self.logger.error('Problem finding attribute: %s', err)
             return
 
         # Take care of keep-alive
@@ -608,7 +616,7 @@ class HikCamera(object):
                                 .total_seconds())
                     # print('Seconds since last update: {}'.format(sec_elap))
                     if sec_elap > 5 and eprop[0] is True:
-                        _LOGGING.debug('Updating stale event %s on CH(%s)',
+                        self.logger.debug('Updating stale event %s on CH(%s)',
                                        etype, eprop[1])
                         attr = [False, eprop[1], eprop[2],
                                 datetime.datetime.now()]
@@ -617,7 +625,7 @@ class HikCamera(object):
 
     def publish_changes(self, etype, echid):
         """Post updates for specified event type."""
-        _LOGGING.debug('%s Update: %s, %s',
+        self.logger.debug('%s Update: %s, %s',
                        self.name, etype, self.fetch_attributes(etype, echid))
         signal = 'ValueChanged.{}'.format(self.cam_id)
         sender = '{}.{}'.format(etype, echid)
@@ -642,5 +650,5 @@ class HikCamera(object):
                 if sensor[1] == int(channel):
                     self.event_states[event][i] = attr
         except KeyError:
-            _LOGGING.debug('Error updating attributes for: (%s, %s)',
+            self.logger.debug('Error updating attributes for: (%s, %s)',
                            event, channel)
